@@ -1,0 +1,305 @@
+---
+title: "Craigslist Personals Ads Analysis"
+author: "Dan Conroy-Beam"
+date: "2022-12-07"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+######Packages#######
+library(qgraph)
+library(igraph)
+library(ggplot2)
+library(reshape2)
+library(plyr)
+library(lmerTest)
+```
+
+
+
+
+
+
+```{r}
+######Data Preparation####
+
+#Load the raw data
+data<-read.csv("Human Data/Processed Data/All_PostsMerged - Final - Expanded - De-duped - Non-EN Removed - Scored 50 Components.csv")
+
+
+#Cut out unnecessary columns
+data<-data[,-c(1:2,9:10,12:14,17)]
+
+#Rename some columns for ease of use
+names(data)[c(1:12,16,37:136)]<-c("board",
+                                  "country",
+                                  "state","region",
+                                  "language",
+                                  "datetime",
+                                  "gso",
+                                  "images",
+                                  "post",
+                                  "age",
+                                  "bodytype",
+                                  "height",
+                                  "sti",
+                                  paste0("fac",1:50),
+                                  paste0("fac",1:50,"_High"))
+
+
+#Cut out themes that didn't have clear interpretations
+data<-data[,-c(50,53,77,82,100,103,127,132)]
+
+#Create a dataframe with the interpreted theme labels
+facLabels<-data.frame("factors"=(1:50)[-c(14,17,41,46)])
+
+#Enter the labels
+facLabels$label<-c("1. Companionship",
+                  "2. Explicit Sex","3. Gay Male Sex",
+                  "4. Male Oral Sex","5. Dom./Sub.",
+                  "6. Activities (Outings)","7. Commitment",
+                  "8. Erotic Massage.","9. Female Mate Prefs.",
+                  "10. Gay Anal Sex","11. Easygoing/Friendly",
+                  "12. Cuckoldry/Threesome",
+                  "13. Gay Body Description",
+                  "15. Female Oral Sex","16. Relationship Types",
+                  "18. Affair/Infidelity","19. Appearance Desc.",
+                  "20. Verification/Proof",
+                  "21. Crossdressing/Feet/Underwear",
+                  "22. Reply Inst.","23. Rough Sex/Degradation",
+                  "24. Dad & Son/Bear & Cub","25. Affection/Intimacy",
+                  "26. Picture Exchange/Youth","27. General BDSM",
+                  "28. Incognito Sex","29. Scheduling",
+                  "30. Quickies","31. Activities (At Home)",
+                  "32. Clean/Safe/Discreet","33. Female Body Desc.",
+                  "34. Chill/Hangout","35. Mature Women/BBW",
+                  "36. Race/Ethnicity","37. Male Sexual Prowess",
+                  "38. Black/Latino Men","39. Transgender",
+                  "40. Incest","42. Voyeurism/Exhibitionism",
+                  "43. British Slang","44. Spanking/Discipline",
+                  "45. Young/Sugar Daddy","47.Measurements/Foot Fetish",
+                  "48. Married/Curious","49. Blue Collar Fantasy",
+                  "50. Height/Weight/Age")
+
+facLabels$label<-factor(facLabels$label,levels=facLabels$label)
+
+#Make gender/sexual orientation a factor
+data$gso<-as.factor(data$gso)
+
+#Relabel missing values as NA
+levels(data$gso)[1]<-"NA"
+
+#Convert age to a numeric
+data$age<-supressWarnings(as.numeric(as.character(data$age)))
+
+#Eliminate implausible ages
+data$age[data$age>100]<-NA
+
+#Convert height into a character temporarily
+data$height<-as.character(data$height)
+
+#Convert heights to numerics
+data$height<-suppressWarnings(as.numeric(data$height))
+
+```
+
+
+
+
+
+
+#Q1: What are the demographics of Craigslist?
+```{r}
+
+###Gender and Sexual Orientation###
+
+#Create a dataframe with frequencies and proportions of
+#different gender and sexual orientations
+gsoTable<-as.data.frame(table(data$gso))
+names(gsoTable)<-c("gso","freq")
+
+#Calculation proportions for each category
+gsoTable$prop<-round(100*gsoTable$freq/sum(gsoTable$freq),2)
+
+#Re-order factor levels according to frequency
+gsoTable$gso<-factor(gsoTable$gso,
+                     levels=levels(gsoTable$gso)[order(gsoTable$freq,
+                                                       decreasing=T)])
+
+#And do the same for the whole dataframe
+data$gso<-factor(data$gso,
+                 levels=levels(data$gso)[order(gsoTable$freq,
+                                               decreasing=T)])
+
+#Re-order the dataframe
+gsoTable<-gsoTable[order(gsoTable$freq,
+                         decreasing=T),]
+
+#Plot frequencies and proportions of gender and sexual orientation
+gsoPlot<-qplot(gso,prop,data=gsoTable
+               ,fill=gso,geom="blank",
+               xlab="Gender/Sexual Orientation",
+               ylab="Proportion of All Ads")+
+  geom_bar(stat="identity")+
+  geom_text(aes(x=gso,y=prop,label=freq,vjust=-.5))+
+  theme_grey(base_size=20)+
+  theme(legend.position="none",
+        axis.text.x=element_text(angle=90,vjust=.25))
+
+```
+
+
+
+```{r}
+
+###Gender Ratios###
+
+#Compute ratio of heterosexual men to heterosexual women
+mwRatio<-gsoTable$freq[gsoTable$gso=="m4w"]/
+  gsoTable$freq[gsoTable$gso=="w4m"]
+
+#Compute ratio of gay men to lesbians
+glRatio<-gsoTable$freq[gsoTable$gso=="m4m"]/
+  gsoTable$freq[gsoTable$gso=="w4w"]
+
+#Compute ratio of couples looking for women to couples looking for men
+cplmwRatio<-gsoTable$freq[gsoTable$gso=="mw4w"]/
+  gsoTable$freq[gsoTable$gso=="mw4m"]
+
+#Compute ratio of men looking for couples to women looking for couples
+mwcplRatio<-gsoTable$freq[gsoTable$gso=="m4mw"]/
+  gsoTable$freq[gsoTable$gso=="w4mw"]
+
+```
+
+
+
+```{r}
+
+###Plots of age and height###
+#I don't think these are interesting, but I'd already generated them
+#so I guess I'll keep them
+
+#Plot age across gso groups
+#Limiting to m4m, m4w, w4m, w4w for now
+agePlot<-qplot(gso,age,data=data[data$gso %in% 
+                                   c("m4m","m4w", "w4m","w4w"),],
+               fill=gso,xlab="Gender/Sexual Orientation",
+               ylab="Age",
+               geom="blank")+
+  geom_violin()+
+  geom_boxplot(width=.1)+
+  theme_grey(base_size=20)+
+  theme(legend.position="none",
+        axis.text.x=element_text(angle=90,vjust=.25))
+
+ageMeans<-tapply(data$age,
+                 data$gso,
+                 function(x) mean(x,na.rm=T))
+
+#Plot height across gso groups
+#Limiting to m4m, m4w, w4m, w4w for now
+heightPlot<-qplot(gso,height,data=data[data$gso %in% 
+                                         c("m4m","m4w","w4m","w4w"),],
+                  fill=gso,
+                  xlab="Gender/Sexual Orientation",
+                  ylab="Height",geom="blank")+
+  geom_violin()+
+  geom_boxplot(width=.1)+
+  theme_grey(base_size=20)+
+  theme(legend.position="none",
+        axis.text.x=element_text(angle=90,vjust=.25))
+```
+
+
+
+```{r}
+
+###Relationship status###
+
+#Convert blanks to NA
+levels(data$status)[1]<-"NA"
+
+#Create a new variable for storing just interesting relationship statuses
+data$relstat<-as.character(data$status)
+data$relstat<-ifelse(data$relstat %in% 
+                       c("married",
+                         "NA",
+                         "single",
+                         "partnered",
+                         "divorced",
+                         "widowed",
+                         "separated"),data$relstat,NA)
+
+#Make relationship status a factor and reorder the factor levels
+data$relstat<-as.factor(data$relstat)
+data$relstat<-factor(data$relstat,
+                     levels=levels(data$relstat)[c(3,6,4,2,1,5,7)])
+
+#Generate a table of relationship status by gso
+relstatTable<-as.data.frame(table(data$relstat,data$gso))
+
+colnames(relstatTable)<-c("status","gso","freq")
+relstatTable$prop<-100*unlist(tapply(relstatTable$freq,relstatTable$gso,function(x) x/sum(x)))
+
+
+
+relstatPlot<-qplot(gso,prop,
+                   fill=status,
+                   data=relstatTable[relstatTable$status!="NA" 
+                                     & relstatTable$gso %in%
+                                       c("m4m","m4w","w4m","w4w"),],
+                   xlab="Gender/Sex. Orient",
+                   ylab="Proportion of Ads\n(by G/So)",geom="blank")+
+  geom_bar(stat="identity",position="dodge")+
+  theme_grey(base_size=15)+
+  geom_text(data=relstatTable[relstatTable$status!="NA"
+                              & relstatTable$gso %in% 
+                                c("m4m","m4w","w4m","w4w"),],
+            aes(label=freq,x=gso,color=status,y=prop+2),
+            position=position_dodge(width=.9),fontface="bold")
+
+
+
+#A large number of m4m are married. 
+#Many of these explicitly mention being bisexual:
+bicheckM4m<-mean(apply(data[data$gso=="m4m" & 
+                              data$relstat=="married",],1,function(x)
+                                grepl("bi",as.character(x[9]),
+                                      ignore.case=T)))
+
+#Same for w4w
+bicheckW4w<-mean(apply(data[data$gso=="w4w" &
+                              data$relstat=="married",],1,function(x)
+                                grepl("bi",as.character(x[9]),
+                                      ignore.case=T)))
+
+#But less so for m4w or w4m
+bicheckM4w<-mean(apply(data[data$gso=="m4w" & 
+                              data$relstat=="married",],1,function(x)
+                                grepl("bi",as.character(x[9]),
+                                      ignore.case=T)))
+bicheckW4m<-mean(apply(data[data$gso=="w4m" & 
+                              data$relstat=="married",],1,function(x)
+                                grepl("bi",as.character(x[9]),
+                                      ignore.case=T)))
+
+
+
+#A large number of the w4w are also couples looking for a woman to join them
+cplcheckW4w<-mean(apply(data[data$gso=="w4w" & 
+                               data$relstat=="married",],1,function(x)
+                                 grepl("couple|poly|watch|\\<us\\>|\\<we\\>",
+                                       as.character(x[9]),
+                                       ignore.case=T)))
+
+#Less so for the other categories
+cplcheckM4m<-mean(apply(data[data$gso=="m4m" & data$relstat=="married",],1,function(x) grepl("couple|poly|watch|\\<us\\>|\\<we\\>",as.character(x[9]),ignore.case=T)))
+cplcheckM4w<-mean(apply(data[data$gso=="m4w" & data$relstat=="married",],1,function(x) grepl("couple|poly|watch|\\<us\\>|\\<we\\>",as.character(x[9]),ignore.case=T)))
+cplcheckW4m<-mean(apply(data[data$gso=="w4m" & data$relstat=="married",],1,function(x) grepl("couple|poly|watch|\\<us\\>|\\<we\\>",as.character(x[9]),ignore.case=T)))
+
+```
