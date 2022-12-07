@@ -9,6 +9,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_knit$set(root.dir="../")
 
 ######Packages#######
 library(qgraph)
@@ -17,6 +18,9 @@ library(ggplot2)
 library(reshape2)
 library(plyr)
 library(lmerTest)
+library(maps)
+library(mapproj)
+
 ```
 
 
@@ -24,11 +28,13 @@ library(lmerTest)
 
 
 
-```{r}
+```{r dataPrep}
 ######Data Preparation####
 
 #Load the raw data
-data<-read.csv("Human Data/Processed Data/All_PostsMerged - Final - Expanded - De-duped - Non-EN Removed - Scored 50 Components.csv")
+#For some reason, this list.files() workaround is the only way I can get the data to load and knit
+data<-read.csv(paste0("Human Data/Processed Data/",list.files("Human Data/Processed Data/")))
+
 
 
 #Cut out unnecessary columns
@@ -94,7 +100,7 @@ data$gso<-as.factor(data$gso)
 levels(data$gso)[1]<-"NA"
 
 #Convert age to a numeric
-data$age<-supressWarnings(as.numeric(as.character(data$age)))
+data$age<-suppressWarnings(as.numeric(as.character(data$age)))
 
 #Eliminate implausible ages
 data$age[data$age>100]<-NA
@@ -112,8 +118,8 @@ data$height<-suppressWarnings(as.numeric(data$height))
 
 
 
-#Q1: What are the demographics of Craigslist?
-```{r}
+# Q1: What are the demographics of Craigslist?
+```{r gso}
 
 ###Gender and Sexual Orientation###
 
@@ -154,7 +160,7 @@ gsoPlot<-qplot(gso,prop,data=gsoTable
 
 
 
-```{r}
+```{r gRatios}
 
 ###Gender Ratios###
 
@@ -178,7 +184,52 @@ mwcplRatio<-gsoTable$freq[gsoTable$gso=="m4mw"]/
 
 
 
-```{r}
+```{r marketEffects}
+###Market Effects###
+
+#Calculate how many pieces of optional information each ad provies
+data$infonum<-rowSums(sapply(10:36,function(y) !(data[,y] %in% c(NA,"NA",""," "))))
+
+#Also add in whether or not the ad included at least one image
+data$infonum<-data$infonum+as.numeric(data$images>0)
+
+#Calculate the average amount of information included as a function of GSO category
+gsoInfo<-tapply(data$infonum,data$gso,mean)
+
+#Create a dataframe to store this information
+demandInfo<-data.frame("gso"=names(gsoInfo),"info"=gsoInfo)
+
+#Calculate, for each GSO category, the ratio of people seeking that category to people posting in that category
+#Higher values here indicate that this group is relatively more in demand
+demandInfo$dratio<-gsotable$freq[c(1,3,2,11,6,5,7,8,16,10,4,18,22,17,15,9,14,12,21,24,19,13,25,20,23)]/gsotable$freq[c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)]
+
+#Also determine, for control/non-independence issues, which pairing each category belongs to
+pairpos<-c(1,3,2,11,6,5,7,8,16,10,4,18,22,17,15,9,14,12,21,24,19,13,25,20,23)
+demandInfo$gsopair<-as.factor(sapply(1:length(pairpos),function(x) ifelse(pairpos[pairpos[x]] %in% pairpos[1:(x-1)],pairpos[x],x)))
+
+#Insert this information back into the full dataframe
+data$dratio<-NA
+data$gsopair<-NA
+
+for(i in unique(data$gso)){
+  data$dratio[data$gso==i]<-demandInfo$dratio[demandInfo$gso==i]
+  data$gsopair[data$gso==i]<-demandInfo$gsopair[demandInfo$gso==i]
+}
+
+#Estimate the relationship between demand ratio and information provided
+#People who belong to more in-demand groups provide less information
+#This is true even if you remove outlier groups with very high demand ratios
+inforeg<-lmer(infonum~dratio+(1|gsopair),data=data)
+inforeg2<-lmer(infonum~dratio+(1|gsopair),data=data[data$dratio<5,])
+
+demandInfoPlot<-qplot(dratio,infonum,data=data,color=gso,xlab="Demand Ratio (# Posts Seeking/# Posts Offering)",ylab="Pieces of Optional Information Provided",geom="blank")+
+  theme_grey(base_size=15)+geom_jitter(width=.40)+scale_color_discrete(name="Gender/\nSex Orient.")+
+  geom_abline(intercept=summary(inforeg)$coefficients[1,1],slope=summary(inforeg)$coefficients[2,1],lwd=1.5)
+
+```
+
+
+```{r ageHeight}
 
 ###Plots of age and height###
 #I don't think these are interesting, but I'd already generated them
@@ -217,7 +268,7 @@ heightPlot<-qplot(gso,height,data=data[data$gso %in%
 
 
 
-```{r}
+```{r relstat}
 
 ###Relationship status###
 
@@ -298,8 +349,425 @@ cplcheckW4w<-mean(apply(data[data$gso=="w4w" &
                                        ignore.case=T)))
 
 #Less so for the other categories
-cplcheckM4m<-mean(apply(data[data$gso=="m4m" & data$relstat=="married",],1,function(x) grepl("couple|poly|watch|\\<us\\>|\\<we\\>",as.character(x[9]),ignore.case=T)))
-cplcheckM4w<-mean(apply(data[data$gso=="m4w" & data$relstat=="married",],1,function(x) grepl("couple|poly|watch|\\<us\\>|\\<we\\>",as.character(x[9]),ignore.case=T)))
-cplcheckW4m<-mean(apply(data[data$gso=="w4m" & data$relstat=="married",],1,function(x) grepl("couple|poly|watch|\\<us\\>|\\<we\\>",as.character(x[9]),ignore.case=T)))
+cplcheckM4m<-mean(apply(data[data$gso=="m4m" & 
+                               data$relstat=="married",],1,function(x)
+                                 grepl("couple|poly|watch|\\<us\\>|\\<we\\>",
+                                       as.character(x[9]),
+                                       ignore.case=T)))
+cplcheckM4w<-mean(apply(data[data$gso=="m4w" & 
+                               data$relstat=="married",],1,function(x) 
+                                 grepl("couple|poly|watch|\\<us\\>|\\<we\\>",
+                                       as.character(x[9]),
+                                       ignore.case=T)))
+cplcheckW4m<-mean(apply(data[data$gso=="w4m" &
+                               data$relstat=="married",],1,function(x) 
+                                 grepl("couple|poly|watch|\\<us\\>|\\<we\\>",
+                                       as.character(x[9]),
+                                       ignore.case=T)))
 
 ```
+
+
+
+### Q1.1: Ads come overwhelmingly from men seeking men and men seeking women
+```{r gsoResults,fig.width=8}
+gsoTable
+gsoPlot
+```
+
+
+
+### Q1.2: Heterosexual men grealy outnumber heterosexual women and gay men greatly outnumber lesbians
+
+Ratio of heterosexual men to heterosexual women: `r mwRatio`  
+Ratio of gay men to lesbians: `r glRatio`
+
+
+
+### Q1.3: Couples overwhelmingly seek women relative to men, but men overwhelmingly seek to join couples relative to women
+
+Ratio of couples seeking men to seeking women: `r cplmwRatio`  
+Ratio of men seeking couples to women seeking couples: `r mwcplRatio`  
+
+
+
+### Q1.4: Most people are single, but a sizeable number are in a relationship
+```{r relstatResults}
+relstatPlot
+```
+
+Many of these appear to be bisexual men (`r bicheckM4m`) and women (`r bicheckW4w`) looking for same-sex partners. This is less the case for peple looking for opposite-sex partners (`r bicheckM4w`) and women (`r bicheckW4m`)
+
+For w4w primarily, many are also couples seeking a third:  
+w4w: `r cplcheckW4w`  
+m4w: `r cplcheckM4w`  
+w4m: `r cplcheckW4m`  
+m4m: `r cplcheckM4m`  
+
+***
+
+# Q2: What are the themes of Craigslist?
+
+Theme labels were generated in a multi-step process.
+
+(1) 3 RAs independently read the factor loadings but *not* the ads  
+These RAs generated independent labels for the themes  
+These were adjusted to a set of consensus labels based on discussion
+
+
+(2) At this point, the factor solution was adjusted slightly due to loss of the original files  
+The factors remained largely the same, but some factors split
+DCB re-labeled the new factors using the consensus labels
+
+(3) Two separate RAs read the theme labels and the 100 highest scoring ads for each theme  
+Based on discussion, these RAs and DCB revised the theme labels as needed.
+
+Factors 14, 17, 41, and 46 were not easily interpretable after this process  
+These are excluded from all analyses
+
+The final labels were:  
+`r facLabels`
+
+
+***
+
+
+# Q3: Is there a distinction between LT and ST mating?
+
+```{r cornet}
+##Correlation Network plot##
+
+#Compute the theme correlation matrix
+cormat<-cor(data[,37:82],use="pairwise.complete.obs")
+
+#Convert to a 0-1 scale so that negative correlations are treated like low association
+cormat2<-cormat
+cormat2<-(cormat+1)/2
+
+#Label
+rownames(cormat2)<-faclabels$factors
+colnames(cormat2)<-faclabels$factors
+
+
+#Plot the correlation network
+cornet<-qgraph(cormat2,graph="cor",layout="spring")
+
+#Convert to an igraph object for analysis
+g<-as.igraph(cornet)
+
+#Detect communities in the network
+clust<-cluster_optimal(g)
+
+#Determine which themes belong to which detected communities
+comms<-faclabels
+comms$comm<-clust$membership
+
+#Re-plot network with community information
+cornet2<-qgraph(cormat2,
+                graph="cor",
+                layout="spring",
+                groups=as.factor(comms$comm),
+                legend=F,minimum=.5)
+
+```
+
+
+
+```{r kmeans}
+
+###K-Means Clustering###
+
+#Draw a subsample of the data for estimating k
+dataSamp<-data[sample(nrow(data),nrow(data)*.10,replace=F),]
+
+#Extract just the factors
+dataSamp<-dataSamp[,37:82]
+
+#Standardize the factor scores to minimize differences between scores
+dataSamp<-apply(dataSamp,2,scale)
+
+#Run the K-means with a variety of values of k
+wss<-sapply(1:10,function(x) 
+  kmeans(na.omit(dataSamp),
+         x,
+         algorithm="Lloyd",
+         iter.max=200)$tot.withinss)
+
+#Plot the total WSS; k = 5 seems reasonable
+wssPlot<-qplot(1:10,
+               wss,
+               xlab="Number of Clusters",
+               ylab="Total Within SS",size=I(2))
+
+#Set a seed to make these analyses reproducible
+set.seed(01052020)
+
+#Fit the k-means
+clust<-kmeans(na.omit(scale(data[,37:82])),
+              5,
+              algorithm="Lloyd",
+              iter.max=300)
+
+#Create a dataframe of cluster means
+clustMeans<-data.frame("cluster"=as.factor(rep(1:5,times=nrow(faclabels))),
+                       "factor"=rep(faclabels$label,each=5),
+                       "mean"=as.vector(clust$centers))
+
+#Plot the clusters
+kMeansPlot<-qplot(factor,mean,fill=cluster,data=clustMeans,
+                  geom="blank",xlab="Theme",ylab="Mean (Z-scored)")+
+  geom_bar(stat="identity",position="dodge",width=.75,color="black")+
+  theme_grey(base_size=15)+scale_fill_discrete(name="Cluster")+
+  theme(axis.text.x=element_text(angle=90,vjust=.25,hjust=1))
+
+#Create a blank variable to store each observation's cluster assignment
+data$cluster<-NA
+
+#Assign each observation to its cluster
+data$cluster[rowSums(is.na(data[,37:82]))==0]<-clust$cluster
+
+#Create labels for the clusters
+clustNames<-c("~M4W Hookups","~Kink","~Longer Term","~Anon. Sex","~Gay Male Sex")
+
+#Create a variable reflecting relative cluster score on theme 1 for labeling
+fac1order<-order(clustMeans$mean[clustMeans$factor=="1. Companionship"],decreasing=T)
+
+#Relabel clusters based on this order
+data$cluster<-mapvalues(data$cluster,fac1order,clustNames[fac1order])
+
+#Reorder factor levels
+data$cluster<-factor(data$cluster,levels=clustNames[fac1order])
+
+#Re-generate the cluster mean dataframe
+clustMeans2<-data.frame("cluster"=rep(mapvalues(1:5,
+                                                fac1order,
+                                                clustNames[fac1order]),
+                                      times=nrow(faclabels)),
+                        "factor"=rep(faclabels$label,each=5),
+                        "mean"=as.vector(clust$centers))
+
+#Reorder factor levels
+clustMeans2$cluster<-factor(clustMeans2$cluster,levels=clustNames[fac1order])
+
+#Re-generate cluster plot
+kMeansPlot2<-qplot(factor,mean,fill=cluster,data=clustMeans2,
+                   geom="blank",xlab="Theme",ylab="Mean (Z-scored)")+
+  geom_bar(stat="identity",position="dodge",width=.75,color="black")+
+  theme_grey(base_size=15)+scale_fill_discrete(name="Cluster")+
+  theme(axis.text.x=element_text(angle=90,vjust=.25,hjust=1))
+
+```
+
+### Q3.1 Theme Correlation Network
+
+Plotting the correlation network reveals an interesting polarity in the themes, with themes pertaining to primarily sexual, opportunistic, short-duration relationships tending to co-occur separate from themes pertaining to relationships that are more romantic, committed, and potentially long-term. 
+
+Community detection splits the network in two, with one community containing themes pertaining to gay male sex, anonymous sex, and kinky sex largely belonging to one community and themes pertaining to committed relationships and men pursuing heterosexual relationships with women belonging to a separate community.
+
+It is worth cautioning, though, that the long-term/short-term distinction appears to covary strongly with sexual-orientation, with many of the "shorter-term" themes also relating to gay male relationships (although this sexual orientation and mating strategy do tend to be correlated)
+
+`r cornet2`
+
+### Q3.2 k-Means Cluster Analysis of Themes
+
+A k-means cluster analysis of the ads based on theme scores suggest ads can reasonably be broken into ~5 clusters. Based on average theme scores, these seem to correspond to:  
+~M4W Hookups  
+~Kink  
+~Longer-Term Relationships  
+~Anonymous Sex  
+~Gay Male Sex
+
+Average standardized theme scores help interpret what these clusters correspond to:  
+`r kMeansPlot2`
+
+Here again, it seems that ads seeking long-term, committed, romantic relationships separate out from ads seeing short-term, primarily sexual relationships. It is noteworthy, though, that this does not appear driven entirely by sexual orientation given the emergence of separate M4W Hookups, Anonymous Sex, and Gay Male Sex clusters.
+
+***
+
+# Q4: Are there gender/sexual orientation differences in theme use?
+
+```{r sexDiffsTheme}
+
+###Gender Differences in Theme Scores###
+
+
+#Create a dataframe to store mean theme scores
+sexDiffs<-data.frame("gso"=c("m4m","m4w","w4m","w4w"))
+
+#Calculate mean theme scores
+diffMat<-apply(data[,37:82],2,function(x) 
+  tapply(scale(x),
+         data$gso,
+         function(y) 
+           mean(y,na.rm=T))[c(1:3,8)])
+
+#Add them to the dataframe and rename
+sexDiffs<-cbind(sexDiffs,diffMat)
+
+colnames(sexDiffs)<-c("gso",as.character(faclabels$label))
+
+#Melt the dataframe
+sexDiffs<-melt(sexDiffs,id.vars="gso")
+
+#And plot
+sexDiffPlot<-qplot(variable,value,fill=gso,data=sexDiffs,
+                   geom="blank",xlab="Theme",ylab="Mean (z-scored)")+
+  geom_bar(stat="identity",position="dodge",width=.75,color="black")+
+  theme_grey(base_size=15)+
+  theme(axis.text.x=element_text(angle=90,vjust=.25))+
+  scale_fill_discrete(name="Gender/Sex\nOrient.")
+
+
+
+##Re-calculating after removing the large number of suspiciously young women...##
+#First, create a variable that reflects whether a person reports their age as under 25
+#People who don't report or who report ages over 25 are categorized as "doesn't report under 25"
+data$u25<-ifelse(data$age>25 |
+                   is.na(data$age)==T,
+                 "Doesn't Report Under 25",
+                 "Reports Under 25")
+
+wAgeDiffs<-data.frame("age"=c("Doesn't Report Under 25","Reports Under 25"))
+
+#Compute theme score differences between women who report being under 25 and women who don't
+wAgeDiffs<-cbind(wAgeDiffs,
+                 sapply(37:82,function(x)
+                   tapply(data[data$gso=="w4m",x],
+                          data$u25[data$gso=="w4m"],
+                          function(x) mean(x,na.rm=T))))
+
+colnames(wAgeDiffs)<-c("age",as.character(faclabels$label))
+
+#Melt, as before
+wAgeDiffs<-melt(wAgeDiffs,id.vars="age")
+
+#Plot differences in theme scores between women who report being under 25 and those who don't
+wAgeDiffPlot<-qplot(variable,value,fill=age,data=wAgeDiffs,
+                    geom="blank",xlab="Theme",ylab="Mean (z-scored)")+
+  geom_bar(stat="identity",position="dodge",width=.75,color="black")+
+  theme_grey(base_size=15)+
+  theme(axis.text.x=element_text(angle=90,vjust=.25))+
+  scale_fill_discrete(name="Age Category")
+
+#Drop all women who report an age 25 or under
+datawfix<-data[((data$gso=="w4w" & data$age<=25) |
+                  (data$gso=="w4m" & data$age<=25))==F,]
+
+#Create a dataframe to store mean theme scores
+sexDiffs2<-data.frame("gso"=c("m4m","m4w","w4m","w4w"))
+
+#calculate mean theme scores
+diffMat2<-apply(datawfix[,37:82],2,function(x) tapply(scale(x),datawfix$gso,function(y) mean(y,na.rm=T))[c(1:3,8)])
+
+#Add them to the dataframe and rename
+sexDiffs2<-cbind(sexDiffs2,diffMat2)
+
+colnames(sexDiffs2)<-c("gso",as.character(faclabels$label))
+
+#Melt the dataframe
+sexDiffs2<-melt(sexDiffs2,id.vars="gso")
+
+#And plot
+sexDiffPlot2<-qplot(variable,value,fill=gso,data=sexDiffs2,geom="blank",xlab="Theme",ylab="Mean (z-scored)")+
+  geom_bar(stat="identity",position="dodge",width=.75,color="black")+theme_grey(base_size=15)+
+  theme(axis.text.x=element_text(angle=90,vjust=.25))+
+  scale_fill_discrete(name="Gender/Sex\nOrient.")
+
+```
+
+
+```{r sexDiffsClusts}
+
+###Clusters by GSO###
+
+#Create a dataframe of GSO frequency by cluster
+gsoClust<-as.data.frame(table(data2$gso,data2$cluster))
+
+#Rename variables
+colnames(gsoClust)<-c("gso","cluster","count")
+
+#Calculate proportions of each GSO group within cluster
+gsoClust$gsoprop<-100*sapply(1:nrow(gsoClust),function(x)
+  gsoClust$count[x]/sum(gsoClust$count[gsoClust$gso==gsoClust$gso[x]]))
+
+
+#Plot GSO as a function of cluster
+gsoClustPlot<-qplot(cluster,gsoprop,fill=gso,data=gsoClust,
+                    xlab="Cluster",ylab="Proportion of Ads (by Cluster)",geom="blank")+
+  geom_bar(stat="identity",position="dodge",color="black")+
+  theme_grey(base_size=15)+
+  annotate("text",label=paste0("Total =\n",
+                               format(tapply(gsoClust$count,
+                                             gsoClust$cluster,
+                                             sum),big.mark=",")),
+           x=1:5,
+           y=tapply(gsoClust$gsoprop,
+                    gsoClust$cluster,
+                    function(x) 10+max(x)))
+
+#Same thing, but plotting clusters within GSO group
+gsoClustPlot2<-qplot(gso,gsoprop,fill=cluster,data=gsoClust,
+                     xlab="Gender/Sexual Orientation",
+                     ylab="Proportion of Ads (by G/SO)",
+                     geom="blank")+
+  geom_bar(stat="identity",position="dodge",color="black")+
+  theme_grey(base_size=15)
+
+
+
+#Repeat the analyses above but ommitting suspiciously young women
+data3<-datawfix[datawfix$gso %in% c("m4m","m4w","w4m","w4w"),]
+data3$gso<-droplevels(data3$gso)
+
+##Breaking down Clusters by GSO##
+#Create a dataframe of GSO frequency by cluster
+gsoClustWfix<-as.data.frame(table(data3$gso,data3$cluster))
+
+#Rename variables
+colnames(gsoClustWfix)<-c("gso","cluster","count")
+
+gsoClustWfix$gsoprop<-100*sapply(1:nrow(gsoClustWfix),function(x)
+  gsoClustWfix$count[x]/sum(gsoClustWfix$count[gsoClustWfix$gso==gsoClustWfix$gso[x]]))
+
+
+#Plot GSO as a function of cluster
+gsoClustPlotWfix<-qplot(cluster,gsoprop,fill=gso,data=gsoClustWfix,xlab="Cluster",ylab="Proportion of Ads (by Cluster)",geom="blank")+
+  geom_bar(stat="identity",position="dodge",color="black")+theme_grey(base_size=15)+
+  annotate("text",label=paste0("Total =\n",format(tapply(gsoClustWfix$count,gsoClustWfix$cluster,sum),big.mark=",")),x=1:5,y=tapply(gsoClustWfix$gsoprop,gsoClustWfix$cluster,function(x) 10+max(x)))
+
+#Same thing, but plotting clusters within GSO group
+gsoClustPlot2Wfix<-qplot(gso,gsoprop,fill=cluster,data=gsoClustWfix,xlab="Gender/Sexual Orientation",ylab="Proportion of Ads (by G/SO)",geom="blank")+
+  geom_bar(stat="identity",position="dodge",color="black")+theme_grey(base_size=15)
+```
+
+Note: all graphs in this section are excluding all women who report being under 25 years of age. There's a suspiciously large number of ads (*n* = `r nrow(data)-nrow(datawfix)`) from women who specifically mention being 25 or younger and these ads differ slightly from ads that don't mention age or don't mention being under 25. For that reason, these ads are excluded here--however, doing so does not substantially change these results.
+
+### Q4.1 Gender Differences in Theme Scores
+
+Plotting average theme score as a function of gender and sexual orientation largely just reveals that gay men separate from the other gender/sexual orientation groups in having higher scores on themes pertaining to gay male sex and anonymous sex.
+
+```{r sexDiffsThemesPlot}
+
+sexDiffsPlot2
+
+```
+
+### Q4.2 Gender Differences in Clusters
+
+Gender and sexual orientation differences in theme use are clearer when looking at the k-means clusters. Here it is clear that the majority of ads in the ~Longer term cluster are coming from w4m or w4w, followed by m4w. Relatively few from from m4m. M4W Hookups is dominated by m4w and w4w, not w4m or m4m. ~Anonymous Sex and Gay Male Sex are dominated by m4m, though more w4m appear in the anonymous sex than m4w (though both are relatively rare).  
+
+```{r sexDiffsClustPlot}
+
+gsoClustPlotWfix
+
+```
+
+Plotting this within gender/sexual orientation category can also clarify the primary emphases of each group:  
+```{r sexDiffsClustPlot2}
+gsoClustPlot2Wfix
+```
+
+Here we see most of the ads for m4m are focusing on short-term relationships as compared to long-term relationships. M4w focus roughly equally on long-term relationships and hookups. W4m and w4w focus overwhelmingly on long-term relationships, though w4w do have some focus on hookups.
+
+
+
