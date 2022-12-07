@@ -11,7 +11,7 @@ output:
 knitr::opts_chunk$set(echo = FALSE)
 knitr::opts_knit$set(root.dir="../")
 
-######Packages#######
+###Packages####
 library(qgraph)
 library(igraph)
 library(ggplot2)
@@ -29,7 +29,8 @@ library(mapproj)
 
 
 ```{r dataPrep}
-######Data Preparation####
+
+###Data Preparation#
 
 #Load the raw data
 #For some reason, this list.files() workaround is the only way I can get the data to load and knit
@@ -185,6 +186,7 @@ mwcplRatio<-gsoTable$freq[gsoTable$gso=="m4mw"]/
 
 
 ```{r marketEffects}
+
 ###Market Effects###
 
 #Calculate how many pieces of optional information each ad provies
@@ -201,28 +203,28 @@ demandInfo<-data.frame("gso"=names(gsoInfo),"info"=gsoInfo)
 
 #Calculate, for each GSO category, the ratio of people seeking that category to people posting in that category
 #Higher values here indicate that this group is relatively more in demand
-demandInfo$dratio<-gsotable$freq[c(1,3,2,11,6,5,7,8,16,10,4,18,22,17,15,9,14,12,21,24,19,13,25,20,23)]/gsotable$freq[c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)]
+demandInfo$dRatio<-gsotable$freq[c(1,3,2,11,6,5,7,8,16,10,4,18,22,17,15,9,14,12,21,24,19,13,25,20,23)]/gsotable$freq[c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)]
 
 #Also determine, for control/non-independence issues, which pairing each category belongs to
 pairpos<-c(1,3,2,11,6,5,7,8,16,10,4,18,22,17,15,9,14,12,21,24,19,13,25,20,23)
-demandInfo$gsopair<-as.factor(sapply(1:length(pairpos),function(x) ifelse(pairpos[pairpos[x]] %in% pairpos[1:(x-1)],pairpos[x],x)))
+demandInfo$gsoPair<-as.factor(sapply(1:length(pairpos),function(x) ifelse(pairpos[pairpos[x]] %in% pairpos[1:(x-1)],pairpos[x],x)))
 
 #Insert this information back into the full dataframe
-data$dratio<-NA
-data$gsopair<-NA
+data$dRatio<-NA
+data$gsoPair<-NA
 
 for(i in unique(data$gso)){
-  data$dratio[data$gso==i]<-demandInfo$dratio[demandInfo$gso==i]
-  data$gsopair[data$gso==i]<-demandInfo$gsopair[demandInfo$gso==i]
+  data$dRatio[data$gso==i]<-demandInfo$dRatio[demandInfo$gso==i]
+  data$gsoPair[data$gso==i]<-demandInfo$gsoPair[demandInfo$gso==i]
 }
 
 #Estimate the relationship between demand ratio and information provided
 #People who belong to more in-demand groups provide less information
 #This is true even if you remove outlier groups with very high demand ratios
-inforeg<-lmer(infonum~dratio+(1|gsopair),data=data)
-inforeg2<-lmer(infonum~dratio+(1|gsopair),data=data[data$dratio<5,])
+inforeg<-lmer(infonum~dRatio+(1|gsoPair),data=data)
+inforeg2<-lmer(infonum~dRatio+(1|gsoPair),data=data[data$dRatio<5,])
 
-demandInfoPlot<-qplot(dratio,infonum,data=data,color=gso,xlab="Demand Ratio (# Posts Seeking/# Posts Offering)",ylab="Pieces of Optional Information Provided",geom="blank")+
+demandInfoPlot<-qplot(dRatio,infonum,data=data,color=gso,xlab="Demand Ratio (# Posts Seeking/# Posts Offering)",ylab="Pieces of Optional Information Provided",geom="blank")+
   theme_grey(base_size=15)+geom_jitter(width=.40)+scale_color_discrete(name="Gender/\nSex Orient.")+
   geom_abline(intercept=summary(inforeg)$coefficients[1,1],slope=summary(inforeg)$coefficients[2,1],lwd=1.5)
 
@@ -391,7 +393,24 @@ Ratio of men seeking couples to women seeking couples: `r mwcplRatio`
 
 
 
-### Q1.4: Most people are single, but a sizeable number are in a relationship
+### Q1.4 People are strategically sensitive to market forces
+
+Ad posters could optionally provide information on a number of ancillary characteristics (e.g., height, weight, eye color, etc.).  
+
+Given the imbalanced ratios of different gender/sexual orientation groups, some posters found themselves in very in-demand groups (there were many more people seeking that group than posting from that group) whereas others found themselves in relatively low-demand groups (there were many more people posting from that group than seeking that group)
+
+People from more in-demand groups provided less optional information than did people from lower demand groups:  
+```{r demandResults}
+
+summary(inforeg)
+
+demandInfoPlot
+
+```
+
+
+
+### Q1.5: Most people are single, but a sizeable number are in a relationship
 ```{r relstatResults}
 relstatPlot
 ```
@@ -404,7 +423,11 @@ m4w: `r cplcheckM4w`
 w4m: `r cplcheckW4m`  
 m4m: `r cplcheckM4m`  
 
+
+
 ***
+
+
 
 # Q2: What are the themes of Craigslist?
 
@@ -429,7 +452,9 @@ The final labels were:
 `r facLabels`
 
 
+
 ***
+
 
 
 # Q3: Is there a distinction between LT and ST mating?
@@ -582,7 +607,11 @@ Average standardized theme scores help interpret what these clusters correspond 
 
 Here again, it seems that ads seeking long-term, committed, romantic relationships separate out from ads seeing short-term, primarily sexual relationships. It is noteworthy, though, that this does not appear driven entirely by sexual orientation given the emergence of separate M4W Hookups, Anonymous Sex, and Gay Male Sex clusters.
 
+
+
 ***
+
+
 
 # Q4: Are there gender/sexual orientation differences in theme use?
 
@@ -771,3 +800,212 @@ Here we see most of the ads for m4m are focusing on short-term relationships as 
 
 
 
+***
+
+
+
+### Q5: Time, Location, and Relationship Status Relationships
+
+I don't think these are quite as important, but we've got the data so may as well take a look.
+
+
+```{r time}
+###Time Relationships###
+
+#Convert datetime to day of the week...
+data$days<-weekdays(as.Date(data$datetime))
+
+#...and hour of the day
+data$hours<-strftime(gsub("T"," ",data$datetime),format="%H")
+
+
+#Create a dataframe with the frequencies of each cluster at each time
+tData<-as.data.frame(table(data$cluster,data$hours,data$days))
+
+#Calculate the proportion of ads that belong to each cluster at each time
+tData$prop<-sapply(1:nrow(tData),function(x)
+  tData[x,4]/sum(tData$Freq[tData$Var3==tData[x,3] & tData$Var2==tData[x,2]]))
+
+#Rename columns
+colnames(tData)<-c("cluster","hour","day","count","prop")
+
+#Convert hour to a numeric
+tData$hour<-as.numeric(as.character(tData$hour))
+
+#Rearrange levels of day
+tData$day<-factor(tData$day,levels=levels(tData$day)[c(2,6:7,5,1,3:4)])
+
+tMeans<-data.frame("day"=rep(levels(tData$day),times=5),
+                   "cluster"=rep(levels(tData$cluster),each=7),
+                   "mean"=as.vector(tapply(tData$count,list(tData$day,tData$cluster),mean)))
+
+tMeans$day<-factor(tMeans$day,levels=unique(tMeans$day))
+
+tPlot<-qplot(hour,count,color=cluster,data=tData,
+              xlab="Hour",ylab="Frequency")+
+  geom_hline(data=tMeans,
+             aes(yintercept=mean,color=cluster),
+             linetype="dashed",lwd=1)+
+  geom_line()+facet_grid(~day)+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  scale_color_discrete(name="Cluster")+
+  theme_grey(base_size=15)
+```
+
+
+
+```{r location}
+
+###Location Relationships###
+
+#Create a dataframe with all US states present in the data
+stateData<-data.frame("state"=sort(unique(data$state[data$country=="USA"])))
+
+#Calculate average theme score by state
+stateThemes<-sapply(37:82,function(x) 
+  na.omit(as.numeric(tapply(data[data$country=="USA",x],
+                            data$state[data$country=="USA"],
+                            function(x) mean(x,na.rm=T)))))
+
+#Add theme scores to the dataframe
+stateData<-data.frame(cbind(stateData,stateThemes))
+
+#Label columns
+colnames(stateData)<-c("state",as.character(faclabels$label))
+
+#Compute proportion of ads that come from each cluster in each state
+stateclusts<-100*sapply(1:5,function(x) 
+  na.omit(as.numeric(tapply(data$cluster[data$country=="USA"],
+                            data$state[data$country=="USA"],
+                            function(y)
+                              mean(y==unique(data$cluster)[x],na.rm=T)))))
+
+#Label clusters
+colnames(stateclusts)<-unique(data$cluster)[1:5]
+
+#Add to state dataframe
+stateData<-cbind(stateData,stateclusts)
+
+#Create a plotting dataframe
+usstates<-map_data("state")
+
+#Add state data
+usstates<-cbind(usstates,stateData[match(usstates$region,tolower(stateData$state)),2:52])
+
+#Abbreviate statements
+usstates$abb<-state.abb[match(usstates$region,tolower(state.name))]
+
+#Move state information to the end; makes looping through plots easier
+usstates<-usstates[,c(7:57,1:6,58)]
+
+#Combine this with lattitude and longitude data
+snames<-aggregate(cbind(long, lat) ~ abb, data=usstates, 
+                  FUN=function(x) mean(range(x)))
+
+#Adjust latitudes
+snames[c(11,31,25,16,12,17,44,18,28,8,38,20,13,47,43),3]<-c(44.11489,39.49971,35.82705,31.5,40.19872,42.5,44.6,39.5,43.5,29,33.9,43,40,38.5,37.6)
+
+
+#Adjust longitudes
+snames[c(41,21,43,16,4,8,34,15,38,25,20,12,13,47,6),2]<-c(-99,-94,-78.75,-92.5,-119.75,-81.75,-97.25,-84.5,-80.5,-79,-84.5,-89,-86.20,-80.75,-73)
+
+#Plot theme scores as a function of state
+stateThemePlots<-lapply(unique(faclabels$factors),function(x)
+
+    ggplot()+
+      geom_polygon(data=usstates,
+                   aes(x=long,
+                       y=lat,
+                       group=group,
+                       fill=usstates[,x],
+                       color=I("black")))+
+      scale_fill_viridis_c(name=colnames(usstates)[x])+
+      theme_void()+
+      coord_map()+
+      theme(legend.position="bottom",legend.title=element_text(size=15))+
+      guides(fill=guide_colourbar(barwidth=20,barheight=1))+
+      geom_text(data=snames,aes(long,lat,label=abb),color=I("white"))
+  
+)
+
+
+#Plot cluster proportions as a function of state
+stateClustPlots<-lapply(1:5,function(x)
+  
+    ggplot()+
+      geom_polygon(data=usstates,
+                   aes(x=long,
+                       y=lat,
+                       group=group,
+                       fill=usstates[,x+46],
+                       color=I("black")))+
+      scale_fill_viridis_c(name=colnames(usstates)[x+46])+
+      theme_void()+
+      coord_map()+
+      theme(legend.position="bottom",legend.title=element_text(size=15))+
+      guides(fill=guide_colourbar(barwidth=20,barheight=1))+
+      geom_text(data=snames,aes(long,lat,label=abb),color=I("white"))
+)
+
+```
+
+
+
+```{r married}
+
+
+#Create a dataframe to store mean theme scores as function of relationship status
+statDiffs<-data.frame("gso"=c("single","partnered","married"))
+
+#Calculate mean theme scores as a function of relationship status
+diffmat<-apply(data[,37:82],2,function(x) tapply(scale(x),data$relstat,function(y) mean(y,na.rm=T))[c(2:4)])
+
+#Add them to the dataframe and rename
+statDiffs<-cbind(statDiffs,diffmat)
+
+colnames(statDiffs)<-c("relstat",as.character(faclabels$label))
+
+#Melt the dataframe
+statDiffs<-melt(statDiffs,id.vars="relstat")
+
+#Plot theme scores across relationship status
+relStatThemePlot<-qplot(variable,value,fill=relstat,data=statDiffs,
+                        geom="blank",xlab="Theme",ylab="Mean (z-scored)")+
+  geom_bar(stat="identity",position="dodge",width=.75,color="black")+
+  theme_gray(base_size=15)+
+  theme(axis.text.x=element_text(angle=90,vjust=.25))+
+  scale_fill_discrete(name="Gender/Sex\nOrient.")
+
+```
+
+
+### Q5.1 Time Relationships
+
+Posts seem to lull on Wednesdays and Thursdays relative to the rest of the week. On weekdays, it looks like posts are frequent in the morning and taper off as night approaches. However, on weekends posts continue long into the night
+
+```{r}
+
+tPlot
+
+```
+
+
+### Q5.2 Location Relationships
+
+Not sure there's much to say here, these are just fun
+
+```{r}
+
+stateClustPlots
+
+```
+
+### Q5.3 Married People
+
+Married people are less likely to talk about long-term related themes. They're more likely to talk about threesomes, affairs, voyeurism, or curiosity about same-sex relationships.
+
+```{r}
+
+relStatThemePlot
+
+```
