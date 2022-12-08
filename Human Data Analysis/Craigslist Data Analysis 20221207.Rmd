@@ -8,7 +8,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = FALSE, out.width="300%", out.height="300%")
 knitr::opts_knit$set(root.dir="../")
 
 ###Packages####
@@ -34,7 +34,7 @@ library(mapproj)
 
 #Load the raw data
 #For some reason, this list.files() workaround is the only way I can get the data to load and knit
-data<-read.csv(paste0("Human Data/Processed Data/",list.files("Human Data/Processed Data/")))
+data<-read.csv(paste0("Human Data/Processed Data/",list.files("Human Data/Processed Data/")[1]))
 
 
 
@@ -190,30 +190,38 @@ mwcplRatio<-gsoTable$freq[gsoTable$gso=="m4mw"]/
 ###Market Effects###
 
 #Calculate how many pieces of optional information each ad provies
-data$infonum<-rowSums(sapply(10:36,function(y) !(data[,y] %in% c(NA,"NA",""," "))))
+data$infoNum<-rowSums(sapply(10:36,function(y) !(data[,y] %in% c(NA,"NA",""," "))))
 
 #Also add in whether or not the ad included at least one image
-data$infonum<-data$infonum+as.numeric(data$images>0)
+data$infoNum<-data$infoNum+as.numeric(data$images>0)
 
 #Calculate the average amount of information included as a function of GSO category
-gsoInfo<-tapply(data$infonum,data$gso,mean)
+gsoInfo<-tapply(data$infoNum,data$gso,mean)
 
 #Create a dataframe to store this information
 demandInfo<-data.frame("gso"=names(gsoInfo),"info"=gsoInfo)
 
 #Calculate, for each GSO category, the ratio of people seeking that category to people posting in that category
 #Higher values here indicate that this group is relatively more in demand
-demandInfo$dRatio<-gsoTable$freq[c(1,3,2,11,6,5,7,8,16,10,4,18,22,17,15,9,14,12,21,24,19,13,25,20,23)]/gsoTable$freq[c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)]
+demandInfo$numSeeking<-gsoTable$freq[c(1,3,2,11,6,5,7,8,16,10,4,18,22,17,15,9,14,12,21,24,19,13,25,20,23)]
+demandInfo$numPosting<-gsoTable$freq[c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25)]
+
+demandInfo$dRatio<-demandInfo$numSeeking/demandInfo$numPosting
 
 #Also determine, for control/non-independence issues, which pairing each category belongs to
 pairpos<-c(1,3,2,11,6,5,7,8,16,10,4,18,22,17,15,9,14,12,21,24,19,13,25,20,23)
-demandInfo$gsoPair<-as.factor(sapply(1:length(pairpos),function(x) ifelse(pairpos[pairpos[x]] %in% pairpos[1:(x-1)],pairpos[x],x)))
+demandInfo$gsoPair<-as.factor(sapply(1:length(pairpos),function(x)
+  ifelse(pairpos[pairpos[x]] %in% pairpos[1:(x-1)],pairpos[x],x)))
 
 #Insert this information back into the full dataframe
+data$numSeeking<-NA
+data$numPosting<-NA
 data$dRatio<-NA
 data$gsoPair<-NA
 
 for(i in unique(data$gso)){
+  data$numSeeking[data$gso==i]<-demandInfo$numSeeking[demandInfo$gso==i]
+  data$numPosting[data$gso==i]<-demandInfo$numPosting[demandInfo$gso==i]
   data$dRatio[data$gso==i]<-demandInfo$dRatio[demandInfo$gso==i]
   data$gsoPair[data$gso==i]<-demandInfo$gsoPair[demandInfo$gso==i]
 }
@@ -221,10 +229,16 @@ for(i in unique(data$gso)){
 #Estimate the relationship between demand ratio and information provided
 #People who belong to more in-demand groups provide less information
 #This is true even if you remove outlier groups with very high demand ratios
-inforeg<-lmer(infonum~dRatio+(1|gsoPair),data=data)
-inforeg2<-lmer(infonum~dRatio+(1|gsoPair),data=data[data$dRatio<5,])
+inforeg<-lmer(infoNum~dRatio+(1|gsoPair),data=data)
+inforeg2<-lmer(infoNum~dRatio+(1|gsoPair),data=data[data$dRatio<5,])
 
-demandInfoPlot<-qplot(dRatio,infonum,data=data,
+#This holds even when you control for the number of ads seeking and posting from each category
+inforeg3<-lmer(infoNum~scale(dRatio)+
+                 scale(numSeeking)+
+                 scale(numPosting)+
+                 (1|gsoPair),data=data)
+
+demandInfoPlot<-qplot(dRatio,infoNum,data=data,
                       color=gso,xlab="Demand Ratio (# Posts Seeking/# Posts Offering)",
                       ylab="Pieces of Optional Information Provided",geom="blank")+
   theme_grey(base_size=15)+
@@ -377,7 +391,7 @@ cplcheckW4m<-mean(apply(data[data$gso=="w4m" &
 
 
 ### Q1.1: Ads come overwhelmingly from men seeking men and men seeking women
-```{r gsoResults,fig.width=8}
+```{r gsoResults,out.width="70%",align="center"}
 gsoTable
 gsoPlot
 ```
@@ -386,15 +400,15 @@ gsoPlot
 
 ### Q1.2: Heterosexual men grealy outnumber heterosexual women and gay men greatly outnumber lesbians
 
-Ratio of heterosexual men to heterosexual women: `r mwRatio`  
-Ratio of gay men to lesbians: `r glRatio`
+Ratio of heterosexual men to heterosexual women: `r round(mwRatio,2)`  
+Ratio of gay men to lesbians: `r round(glRatio,2)`
 
 
 
 ### Q1.3: Couples overwhelmingly seek women relative to men, but men overwhelmingly seek to join couples relative to women
 
-Ratio of couples seeking men to seeking women: `r cplmwRatio`  
-Ratio of men seeking couples to women seeking couples: `r mwcplRatio`  
+Ratio of couples seeking men to seeking women: `r round(cplmwRatio,2)`  
+Ratio of men seeking couples to women seeking couples: `r round(mwcplRatio,2)`  
 
 
 
@@ -420,13 +434,13 @@ summary(inforeg)
 relstatPlot
 ```
 
-Many of these appear to be bisexual men (`r bicheckM4m`) and women (`r bicheckW4w`) looking for same-sex partners. This is less the case for people looking for opposite-sex partners (`r bicheckM4w`) and women (`r bicheckW4m`)
+Many of these appear to be bisexual men (`r paste0(round(100*bicheckM4m,2),"%")` and women (`r paste0(round(100*bicheckW4w,2),"%")`) looking for same-sex partners. This is less the case for people looking for opposite-sex partners (`r paste0(round(100*bicheckM4w,2),"%")`) and women (`r paste0(round(100*bicheckW4m,2),"%")`)
 
 For w4w primarily, many are also couples seeking a third:  
-w4w: `r cplcheckW4w`  
-m4w: `r cplcheckM4w`  
-w4m: `r cplcheckW4m`  
-m4m: `r cplcheckM4m`  
+w4w: `r paste0(round(100*cplcheckW4w,2),"%")`  
+m4w: `r paste0(round(100*cplcheckM4w,2),"%")`  
+w4m: `r paste0(round(100*cplcheckW4m,2),"%")`  
+m4m: `r paste0(round(100*cplcheckM4m,2),"%")`  
 
 
 
@@ -454,7 +468,11 @@ Factors 14, 17, 41, and 46 were not easily interpretable after this process
 These are excluded from all analyses
 
 The final labels were:  
-`r facLabels`
+```{r themeLabelsOutput``}
+
+facLabels
+
+```
 
 
 
@@ -475,12 +493,12 @@ cormat2<-cormat
 cormat2<-(cormat+1)/2
 
 #Label
-rownames(cormat2)<-faclabels$factors
-colnames(cormat2)<-faclabels$factors
+rownames(cormat2)<-facLabels$factors
+colnames(cormat2)<-facLabels$factors
 
 
 #Plot the correlation network
-cornet<-qgraph(cormat2,graph="cor",layout="spring")
+cornet<-qgraph(cormat2,graph="cor",layout="spring",DoNotPlot=T)
 
 #Convert to an igraph object for analysis
 g<-as.igraph(cornet)
@@ -489,7 +507,7 @@ g<-as.igraph(cornet)
 clust<-cluster_optimal(g)
 
 #Determine which themes belong to which detected communities
-comms<-faclabels
+comms<-facLabels
 comms$comm<-clust$membership
 
 #Re-plot network with community information
@@ -497,7 +515,7 @@ cornet2<-qgraph(cormat2,
                 graph="cor",
                 layout="spring",
                 groups=as.factor(comms$comm),
-                legend=F,minimum=.5)
+                legend=F,minimum=.5,DoNotPlot=T)
 
 ```
 
@@ -539,8 +557,8 @@ clust<-kmeans(na.omit(scale(data[,37:82])),
               iter.max=300)
 
 #Create a dataframe of cluster means
-clustMeans<-data.frame("cluster"=as.factor(rep(1:5,times=nrow(faclabels))),
-                       "factor"=rep(faclabels$label,each=5),
+clustMeans<-data.frame("cluster"=as.factor(rep(1:5,times=nrow(facLabels))),
+                       "factor"=rep(facLabels$label,each=5),
                        "mean"=as.vector(clust$centers))
 
 #Plot the clusters
@@ -572,8 +590,8 @@ data$cluster<-factor(data$cluster,levels=clustNames[fac1order])
 clustMeans2<-data.frame("cluster"=rep(mapvalues(1:5,
                                                 fac1order,
                                                 clustNames[fac1order]),
-                                      times=nrow(faclabels)),
-                        "factor"=rep(faclabels$label,each=5),
+                                      times=nrow(facLabels)),
+                        "factor"=rep(facLabels$label,each=5),
                         "mean"=as.vector(clust$centers))
 
 #Reorder factor levels
@@ -596,7 +614,11 @@ Community detection splits the network in two, with one community containing the
 
 It is worth cautioning, though, that the long-term/short-term distinction appears to covary strongly with sexual-orientation, with many of the "shorter-term" themes also relating to gay male relationships (although this sexual orientation and mating strategy do tend to be correlated).
 
-`r cornet2`
+```{r cornetOutput}
+
+plot(cornet2)
+
+```
 (note: this network omits correlations less than 0)
 
 ### Q3.2 k-Means Cluster Analysis of Themes
@@ -609,7 +631,12 @@ A k-means cluster analysis of the ads based on theme scores suggest ads can reas
 ~Gay Male Sex
 
 Average standardized theme scores help interpret what these clusters correspond to:  
-`r kMeansPlot2`
+
+```{r kmeansPlotOutput}
+
+kMeansPlot2
+
+```
 
 Here again, it seems that ads seeking long-term, committed, romantic relationships separate out from ads seeing short-term, primarily sexual relationships. It is noteworthy, though, that this does not appear driven entirely by sexual orientation given the emergence of separate M4W Hookups, Anonymous Sex, and Gay Male Sex clusters.
 
@@ -639,7 +666,7 @@ diffMat<-apply(data[,37:82],2,function(x)
 #Add them to the dataframe and rename
 sexDiffs<-cbind(sexDiffs,diffMat)
 
-colnames(sexDiffs)<-c("gso",as.character(faclabels$label))
+colnames(sexDiffs)<-c("gso",as.character(facLabels$label))
 
 #Melt the dataframe
 sexDiffs<-melt(sexDiffs,id.vars="gso")
@@ -671,7 +698,7 @@ wAgeDiffs<-cbind(wAgeDiffs,
                           data$u25[data$gso=="w4m"],
                           function(x) mean(x,na.rm=T))))
 
-colnames(wAgeDiffs)<-c("age",as.character(faclabels$label))
+colnames(wAgeDiffs)<-c("age",as.character(facLabels$label))
 
 #Melt, as before
 wAgeDiffs<-melt(wAgeDiffs,id.vars="age")
@@ -697,7 +724,7 @@ diffMat2<-apply(datawfix[,37:82],2,function(x) tapply(scale(x),datawfix$gso,func
 #Add them to the dataframe and rename
 sexDiffs2<-cbind(sexDiffs2,diffMat2)
 
-colnames(sexDiffs2)<-c("gso",as.character(faclabels$label))
+colnames(sexDiffs2)<-c("gso",as.character(facLabels$label))
 
 #Melt the dataframe
 sexDiffs2<-melt(sexDiffs2,id.vars="gso")
@@ -714,6 +741,10 @@ sexDiffPlot2<-qplot(variable,value,fill=gso,data=sexDiffs2,geom="blank",xlab="Th
 ```{r sexDiffsClusts}
 
 ###Clusters by GSO###
+
+#Create a dataframe with just the 4 most common gso combinations
+data2<-data[data$gso %in% c("m4m","m4w","w4m","w4w"),]
+data2$gso<-droplevels(data2$gso)
 
 #Create a dataframe of GSO frequency by cluster
 gsoClust<-as.data.frame(table(data2$gso,data2$cluster))
@@ -783,7 +814,7 @@ Plotting average theme score as a function of gender and sexual orientation larg
 
 ```{r sexDiffsThemesPlot}
 
-sexDiffsPlot2
+sexDiffPlot2
 
 ```
 
@@ -799,7 +830,9 @@ gsoClustPlotWfix
 
 Plotting this within gender/sexual orientation category can also clarify the primary emphases of each group:  
 ```{r sexDiffsClustPlot2}
+
 gsoClustPlot2Wfix
+
 ```
 
 Here we see most of the ads for m4m are focusing on short-term relationships as compared to long-term relationships. M4w focus roughly equally on long-term relationships and hookups. W4m and w4w focus overwhelmingly on long-term relationships, though w4w do have some focus on hookups.
@@ -877,7 +910,7 @@ stateThemes<-sapply(37:82,function(x)
 stateData<-data.frame(cbind(stateData,stateThemes))
 
 #Label columns
-colnames(stateData)<-c("state",as.character(faclabels$label))
+colnames(stateData)<-c("state",as.character(facLabels$label))
 
 #Compute proportion of ads that come from each cluster in each state
 stateclusts<-100*sapply(1:5,function(x) 
@@ -916,7 +949,7 @@ snames[c(11,31,25,16,12,17,44,18,28,8,38,20,13,47,43),3]<-c(44.11489,39.49971,35
 snames[c(41,21,43,16,4,8,34,15,38,25,20,12,13,47,6),2]<-c(-99,-94,-78.75,-92.5,-119.75,-81.75,-97.25,-84.5,-80.5,-79,-84.5,-89,-86.20,-80.75,-73)
 
 #Plot theme scores as a function of state
-stateThemePlots<-lapply(unique(faclabels$factors),function(x)
+stateThemePlots<-lapply(unique(facLabels$factors),function(x)
 
     ggplot()+
       geom_polygon(data=usstates,
@@ -969,7 +1002,7 @@ diffmat<-apply(data[,37:82],2,function(x) tapply(scale(x),data$relstat,function(
 #Add them to the dataframe and rename
 statDiffs<-cbind(statDiffs,diffmat)
 
-colnames(statDiffs)<-c("relstat",as.character(faclabels$label))
+colnames(statDiffs)<-c("relstat",as.character(facLabels$label))
 
 #Melt the dataframe
 statDiffs<-melt(statDiffs,id.vars="relstat")
@@ -1002,7 +1035,7 @@ Not sure there's much to say here, these are just fun
 
 ```{r}
 
-stateClustPlots
+lapply(stateClustPlots,function(x) x)
 
 ```
 
